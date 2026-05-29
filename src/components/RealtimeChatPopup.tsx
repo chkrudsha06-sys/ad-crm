@@ -56,24 +56,19 @@ type ChatRead = {
   last_read_at: string | null;
 };
 
-const MEMBERS: ChatTarget[] = [
-  {
-    name: "전체 채팅",
-    title: "전체 공용 채팅방",
-    type: "public",
-    group: "team",
-  },
-  { name: "문시욱", title: "대표님", type: "direct", group: "member" },
-  { name: "김정후", title: "본부장님", type: "direct", group: "member" },
-  { name: "김창완", title: "팀장님", type: "direct", group: "member" },
-  { name: "최웅", title: "파트장님", type: "direct", group: "member" },
-  { name: "조계현", title: "메인님", type: "direct", group: "member" },
-  { name: "이세호", title: "어쏘님", type: "direct", group: "member" },
-  { name: "기여운", title: "어쏘님", type: "direct", group: "member" },
-  { name: "최연전", title: "CX님", type: "direct", group: "member" },
-  { name: "김재영", title: "어시님", type: "direct", group: "member" },
-  { name: "최은정", title: "어시님", type: "direct", group: "member" },
-];
+type CRMChatUser = {
+  id: string;
+  name: string;
+  title: string | null;
+  role: string | null;
+};
+
+const TEAM_ROOM: ChatTarget = {
+  name: "전체 채팅",
+  title: "전체 공용 채팅방",
+  type: "public",
+  group: "team",
+};
 
 function safeWindowStorageGet(key: string) {
   if (typeof window === "undefined") return null;
@@ -95,12 +90,7 @@ function safeWindowStorageSet(key: string, value: string) {
 
 function getStoredSelectedName(myName: string) {
   const stored = safeWindowStorageGet(`crm-chat-selected-room:${myName}`);
-  if (
-    stored &&
-    MEMBERS.some((member) => member.name === stored && member.name !== myName)
-  )
-    return stored;
-  return MEMBERS[0].name;
+  return stored || TEAM_ROOM.name;
 }
 
 function getStoredRoomScroll(myName: string) {
@@ -267,6 +257,7 @@ export default function RealtimeChatPopup({
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [reads, setReads] = useState<ChatRead[]>([]);
   const [presences, setPresences] = useState<ChatPresence[]>([]);
+  const [crmUsers, setCrmUsers] = useState<CRMChatUser[]>([]);
   const [draft, setDraft] = useState(() =>
     getStoredDraft(user.name, getStoredSelectedName(user.name)),
   );
@@ -277,12 +268,25 @@ export default function RealtimeChatPopup({
   const roomListRef = useRef<HTMLDivElement>(null);
   const roomListScrollTopRef = useRef(getStoredRoomScroll(user.name));
   const hasLoadedMessagesRef = useRef(false);
+  const members = useMemo<ChatTarget[]>(() => {
+    const directRooms = crmUsers
+      .filter((crmUser) => crmUser.name && crmUser.name !== user.name)
+      .map((crmUser) => ({
+        name: crmUser.name,
+        title: crmUser.title || crmUser.role || "구성원",
+        type: "direct" as const,
+        group: "member" as const,
+      }));
+
+    return [TEAM_ROOM, ...directRooms];
+  }, [crmUsers, user.name]);
+
   const selected = useMemo(
     () =>
-      MEMBERS.find(
+      members.find(
         (member) => member.name === selectedName && member.name !== user.name,
-      ) || MEMBERS[0],
-    [selectedName, user.name],
+      ) || TEAM_ROOM,
+    [members, selectedName, user.name],
   );
   const selectedRef = useRef(selected);
   const draftHydratedRoomRef = useRef(selected.name);
@@ -306,17 +310,29 @@ export default function RealtimeChatPopup({
   useEffect(() => {
     userNameRef.current = user.name;
     const stored = getStoredSelectedName(user.name);
+
     setSelectedName((prev) => {
       if (
         prev &&
         prev !== user.name &&
-        MEMBERS.some((member) => member.name === prev)
-      )
+        members.some((member) => member.name === prev)
+      ) {
         return prev;
-      return stored;
+      }
+
+      if (
+        stored &&
+        stored !== user.name &&
+        members.some((member) => member.name === stored)
+      ) {
+        return stored;
+      }
+
+      return TEAM_ROOM.name;
     });
+
     roomListScrollTopRef.current = getStoredRoomScroll(user.name);
-  }, [user.name]);
+  }, [members, user.name]);
 
   const presenceMap = useMemo(() => {
     const map = new Map<string, ChatPresence>();
@@ -325,7 +341,7 @@ export default function RealtimeChatPopup({
   }, [presences]);
 
   const targets = useMemo(() => {
-    const base = MEMBERS.filter(
+    const base = members.filter(
       (member) => member.type === "public" || member.name !== user.name,
     );
     const q = keyword.trim();
@@ -333,7 +349,7 @@ export default function RealtimeChatPopup({
     return base.filter((member) =>
       `${member.name} ${member.title}`.includes(q),
     );
-  }, [keyword, user.name]);
+  }, [members, keyword, user.name]);
 
   const publicRooms = targets.filter((target) => target.group === "team");
   const memberRooms = targets.filter((target) => target.group === "member");
@@ -362,6 +378,21 @@ export default function RealtimeChatPopup({
     }
 
     setPresences((data || []) as unknown as ChatPresence[]);
+  }, []);
+
+  const fetchCrmUsers = useCallback(async () => {
+    const { data, error } = await supabase
+      .from("crm_users")
+      .select("id,name,title,role")
+      .order("created_at", { ascending: true });
+
+    if (error) {
+      console.error("CRM users fetch error:", error);
+      setCrmUsers([]);
+      return;
+    }
+
+    setCrmUsers((data || []) as unknown as CRMChatUser[]);
   }, []);
 
   const fetchMessages = useCallback(async (silent = false) => {
@@ -412,6 +443,7 @@ export default function RealtimeChatPopup({
 
   useEffect(() => {
     void upsertPresence(user);
+    void fetchCrmUsers();
     void fetchMessages(false);
     void fetchReads();
     void fetchPresences();
@@ -490,6 +522,7 @@ export default function RealtimeChatPopup({
       document.removeEventListener("visibilitychange", syncOnVisibility);
     };
   }, [
+    fetchCrmUsers,
     fetchMessages,
     fetchPresences,
     fetchReads,
