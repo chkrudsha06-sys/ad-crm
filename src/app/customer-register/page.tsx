@@ -67,6 +67,73 @@ type FormState = {
   rt: string;
 };
 
+type FieldHistoryForm = {
+  site_name: string;
+  area: string;
+  site_condition: string;
+  sale_rate: string;
+  organization_size: string;
+  organization_chart: string;
+  rt_fee: string;
+  next_site_name: string;
+  next_move_month: string;
+  expected_revenue_site: string;
+  expected_revenue: string;
+  info_date: string;
+  info_source: string;
+  field_memo: string;
+};
+
+const TODAY = new Date().toISOString().slice(0, 10);
+
+const SITE_CONDITIONS = ["그랜드오픈", "첫조직투입", "정체기", "설거지"];
+const SALE_RATES = ["5%", "10%", "20%", "30%", "40%", "50%", "60%", "70%", "80%", "90%"];
+const ORGANIZATION_SIZES = [
+  "50명 미만",
+  "50~100명",
+  "100~150명",
+  "150~200명",
+  "200~250명",
+  "250~300명",
+  "300명 이상",
+];
+const MOVE_MONTHS = ["1월", "2월", "3월", "4월", "5월", "6월", "7월", "8월", "9월", "10월", "11월", "12월"];
+const INFO_SOURCES = ["본인통화", "카톡", "소개", "상담사 공유", "현장소식", "기타"];
+
+const emptyFieldHistoryForm = (): FieldHistoryForm => ({
+  site_name: "",
+  area: "",
+  site_condition: "",
+  sale_rate: "",
+  organization_size: "",
+  organization_chart: "",
+  rt_fee: "",
+  next_site_name: "",
+  next_move_month: "",
+  expected_revenue_site: "",
+  expected_revenue: "",
+  info_date: TODAY,
+  info_source: "",
+  field_memo: "",
+});
+
+const hasFieldHistoryInput = (history: FieldHistoryForm) =>
+  Boolean(
+    history.site_name.trim() ||
+      history.area.trim() ||
+      history.site_condition ||
+      history.sale_rate ||
+      history.organization_size ||
+      history.organization_chart.trim() ||
+      history.rt_fee.trim() ||
+      history.next_site_name.trim() ||
+      history.next_move_month ||
+      history.expected_revenue_site.trim() ||
+      history.expected_revenue.trim() ||
+      history.info_source ||
+      history.field_memo.trim(),
+  );
+
 const TEAM = ["조계현", "이세호", "기여운", "최연전"];
 const CONSULTANTS = [
   "박경화",
@@ -82,13 +149,7 @@ const CONSULTANTS = [
 const OPT = {
   customer_type: ["신규", "기고객"],
   management_stage: ["리드", "프로스펙팅", "딜크로징", "리텐션"],
-  intake_route: [
-    "컨설턴트VIP DB",
-    "컨설턴트 교차DB",
-    "신규TM",
-    "완판트럭",
-    "분양회MGM",
-  ],
+  intake_route: ["신규TM", "기고객TM", "MGM", "미팅", "대협팀활동"],
   prospect_type: ["즉가입가망", "미팅예정가망", "연계매출가망"],
   meeting_result: [
     "계약완료",
@@ -172,6 +233,9 @@ export default function CustomerRegisterPage() {
   const [editId, setEditId] = useState<number | null>(null);
   const [showAdd, setShowAdd] = useState(false);
   const [form, setForm] = useState<FormState>({ ...EMPTY_FORM });
+  const [fieldHistoryForm, setFieldHistoryForm] = useState<FieldHistoryForm>(() =>
+    emptyFieldHistoryForm(),
+  );
   const [saving, setSaving] = useState(false);
   const [userName, setUserName] = useState("");
   const [toast, setToast] = useState("");
@@ -255,27 +319,84 @@ export default function CustomerRegisterPage() {
       return;
     }
 
+    const resolvedSiteName =
+      fieldHistoryForm.site_name.trim() || form.operating_site.trim();
+
+    if (hasFieldHistoryInput(fieldHistoryForm) && !resolvedSiteName) {
+      showToast("Field History 입력 시 현장명을 입력하세요");
+      return;
+    }
+
     setSaving(true);
     const payload: Record<string, string | null> = {};
     Object.entries(form).forEach(([key, value]) => {
       payload[key] = value.trim() || null;
     });
 
-    const { error } = editId
-      ? await supabase.from("contacts").update(payload).eq("id", editId)
-      : await supabase.from("contacts").insert(payload);
+    let contactId = editId;
+    let saveError: any = null;
 
-    setSaving(false);
+    if (editId) {
+      const { error } = await supabase
+        .from("contacts")
+        .update(payload)
+        .eq("id", editId);
+      saveError = error;
+    } else {
+      const { data, error } = await supabase
+        .from("contacts")
+        .insert(payload)
+        .select("id")
+        .single();
+      saveError = error;
+      contactId = data?.id || null;
+    }
 
-    if (error) {
-      showToast(`저장 실패: ${error.message}`);
+    if (saveError) {
+      setSaving(false);
+      showToast(`저장 실패: ${saveError.message}`);
       return;
     }
 
+    if (contactId && hasFieldHistoryInput(fieldHistoryForm)) {
+      const { error: historyError } = await supabase
+        .from("contact_field_histories")
+        .insert({
+          contact_id: contactId,
+          site_name: resolvedSiteName || null,
+          area: fieldHistoryForm.area.trim() || null,
+          site_condition: fieldHistoryForm.site_condition || null,
+          sale_rate: fieldHistoryForm.sale_rate || null,
+          organization_size: fieldHistoryForm.organization_size || null,
+          organization_chart: fieldHistoryForm.organization_chart.trim() || null,
+          rt_fee: fieldHistoryForm.rt_fee.trim() || null,
+          next_site_name: fieldHistoryForm.next_site_name.trim() || null,
+          next_move_month: fieldHistoryForm.next_move_month || null,
+          expected_revenue_site:
+            fieldHistoryForm.expected_revenue_site.trim() ||
+            fieldHistoryForm.next_site_name.trim() ||
+            resolvedSiteName ||
+            null,
+          expected_revenue: fieldHistoryForm.expected_revenue.trim() || null,
+          info_date: fieldHistoryForm.info_date || TODAY,
+          info_source: fieldHistoryForm.info_source || null,
+          field_memo: fieldHistoryForm.field_memo.trim() || null,
+          author: userName || null,
+        });
+
+      if (historyError) {
+        setSaving(false);
+        showToast(`Field History 저장 실패: ${historyError.message}`);
+        return;
+      }
+    }
+
+    setSaving(false);
     showToast(editId ? "수정 완료" : "등록 완료");
     setShowAdd(false);
     setEditId(null);
     setForm({ ...EMPTY_FORM });
+    setFieldHistoryForm(emptyFieldHistoryForm());
     fetchContacts();
   };
 
@@ -301,6 +422,7 @@ export default function CustomerRegisterPage() {
       team_org_count: contact.team_org_count || "",
       rt: contact.rt || "",
     });
+    setFieldHistoryForm(emptyFieldHistoryForm());
     setShowAdd(true);
   };
 
@@ -378,6 +500,10 @@ export default function CustomerRegisterPage() {
     setForm((prev) => ({ ...prev, [key]: value }));
   };
 
+  const setFieldHistoryField = (key: keyof FieldHistoryForm, value: string) => {
+    setFieldHistoryForm((prev) => ({ ...prev, [key]: value }));
+  };
+
   const resetFilters = () => {
     setSearch("");
     setFCustomerType("");
@@ -390,6 +516,7 @@ export default function CustomerRegisterPage() {
   const openCreate = () => {
     setEditId(null);
     setForm({ ...EMPTY_FORM });
+    setFieldHistoryForm(emptyFieldHistoryForm());
     const user = getCurrentUser();
     if (user?.role === "exec") {
       setForm((prev) => ({ ...prev, assigned_to: user.name }));
@@ -798,8 +925,10 @@ export default function CustomerRegisterPage() {
         <CustomerModal
           editId={editId}
           form={form}
+          fieldHistoryForm={fieldHistoryForm}
           saving={saving}
           setField={setField}
+          setFieldHistoryField={setFieldHistoryField}
           onClose={() => {
             setShowAdd(false);
             setEditId(null);
@@ -1234,15 +1363,19 @@ function CustomerDetailPanel({
 function CustomerModal({
   editId,
   form,
+  fieldHistoryForm,
   saving,
   setField,
+  setFieldHistoryField,
   onClose,
   onSave,
 }: {
   editId: number | null;
   form: FormState;
+  fieldHistoryForm: FieldHistoryForm;
   saving: boolean;
   setField: (key: keyof FormState, value: string) => void;
+  setFieldHistoryField: (key: keyof FieldHistoryForm, value: string) => void;
   onClose: () => void;
   onSave: () => void;
 }) {
@@ -1305,30 +1438,6 @@ function CustomerModal({
               onChange={(value) => setField("management_stage", value)}
               options={OPT.management_stage}
             />
-            <FormSelect
-              label="가망유형"
-              value={form.prospect_type}
-              onChange={(value) => setField("prospect_type", value)}
-              options={OPT.prospect_type}
-            />
-            <FormSelect
-              label="미팅결과"
-              value={form.meeting_result}
-              onChange={(value) => setField("meeting_result", value)}
-              options={OPT.meeting_result}
-            />
-            <FormSelect
-              label="대협팀 담당자"
-              value={form.assigned_to}
-              onChange={(value) => setField("assigned_to", value)}
-              options={TEAM}
-            />
-            <FormSelect
-              label="담당 컨설턴트"
-              value={form.consultant}
-              onChange={(value) => setField("consultant", value)}
-              options={CONSULTANTS}
-            />
             <FormInput
               label="운영현장"
               value={form.operating_site}
@@ -1341,26 +1450,7 @@ function CustomerModal({
               onChange={(value) => setField("tm_sensitivity", value)}
               options={["상", "중", "하"]}
             />
-            <FormInput
-              label="전체조직수"
-              value={form.total_org_count}
-              onChange={(value) => setField("total_org_count", value)}
-              placeholder="예: 150"
-            />
-            <FormInput
-              label="팀조직수"
-              value={form.team_org_count}
-              onChange={(value) => setField("team_org_count", value)}
-              placeholder="예: 30"
-            />
-            <FormInput
-              label="R/T"
-              value={form.rt}
-              onChange={(value) => setField("rt", value)}
-              placeholder="예: 팀500만원"
-            />
           </div>
-
           <div className="mt-4">
             <label className="crm-meta mb-2 block">메모</label>
             <textarea
@@ -1376,6 +1466,73 @@ function CustomerModal({
               }}
             />
           </div>
+
+          <section
+            className="mt-5 rounded-[18px] border p-4"
+            style={{
+              background: "var(--surface-2)",
+              borderColor: "var(--border-subtle)",
+            }}
+          >
+            <div className="mb-4">
+              <p className="crm-section-title">Field History</p>
+              <p className="crm-tiny mt-1">파이프라인 고객카드의 Field History와 동일하게 저장됩니다.</p>
+            </div>
+
+            <div className="space-y-5">
+              <div>
+                <p className="mb-3 text-[12px] font-black" style={{ color: "var(--text-strong)" }}>
+                  현장정보 현재 기준
+                </p>
+                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                  <FormInput label="현장명" value={fieldHistoryForm.site_name} onChange={(value) => setFieldHistoryField("site_name", value)} placeholder="예: 대전 문화공원 수자인" />
+                  <FormInput label="지역" value={fieldHistoryForm.area} onChange={(value) => setFieldHistoryField("area", value)} placeholder="예: 대전" />
+                  <FormSelect label="현장컨디션" value={fieldHistoryForm.site_condition} onChange={(value) => setFieldHistoryField("site_condition", value)} options={SITE_CONDITIONS} />
+                  <FormSelect label="분양률" value={fieldHistoryForm.sale_rate} onChange={(value) => setFieldHistoryField("sale_rate", value)} options={SALE_RATES} />
+                </div>
+              </div>
+
+              <div>
+                <p className="mb-3 text-[12px] font-black" style={{ color: "var(--text-strong)" }}>
+                  조직정보
+                </p>
+                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                  <FormSelect label="조직수" value={fieldHistoryForm.organization_size} onChange={(value) => setFieldHistoryField("organization_size", value)} options={ORGANIZATION_SIZES} />
+                  <FormInput label="현장조직도" value={fieldHistoryForm.organization_chart} onChange={(value) => setFieldHistoryField("organization_chart", value)} placeholder="예: 1총괄 3본부" />
+                  <FormInput label="R/T(수수료)" value={fieldHistoryForm.rt_fee} onChange={(value) => setFieldHistoryField("rt_fee", value)} placeholder="예: 팀 600만" />
+                  <FormSelect label="정보출처" value={fieldHistoryForm.info_source} onChange={(value) => setFieldHistoryField("info_source", value)} options={INFO_SOURCES} />
+                </div>
+              </div>
+
+              <div>
+                <p className="mb-3 text-[12px] font-black" style={{ color: "var(--text-strong)" }}>
+                  현장이동예정정보 / 예상매출
+                </p>
+                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                  <FormInput label="이동예정현장명" value={fieldHistoryForm.next_site_name} onChange={(value) => setFieldHistoryField("next_site_name", value)} placeholder="예: 대전 문화공원 수자인" />
+                  <FormSelect label="현장이동예정월" value={fieldHistoryForm.next_move_month} onChange={(value) => setFieldHistoryField("next_move_month", value)} options={MOVE_MONTHS} />
+                  <FormInput label="예상매출 기준 현장" value={fieldHistoryForm.expected_revenue_site} onChange={(value) => setFieldHistoryField("expected_revenue_site", value)} placeholder="예: 현재 입력 현장" />
+                  <FormInput label="예상매출" value={fieldHistoryForm.expected_revenue} onChange={(value) => setFieldHistoryField("expected_revenue", value)} placeholder="예: 500만원" />
+                  <FormInput label="정보 기준일" value={fieldHistoryForm.info_date} onChange={(value) => setFieldHistoryField("info_date", value)} placeholder="YYYY-MM-DD" />
+                </div>
+                <div className="mt-3">
+                  <label className="crm-meta mb-2 block">현장 메모</label>
+                  <textarea
+                    value={fieldHistoryForm.field_memo}
+                    onChange={(event) => setFieldHistoryField("field_memo", event.target.value)}
+                    rows={3}
+                    placeholder="예: 6월 말 이동 가능성 높음. 하이타겟 제안 가능성 있음."
+                    className="w-full resize-none rounded-[14px] border px-4 py-3 text-[13px] font-[620] outline-none"
+                    style={{
+                      background: "var(--surface)",
+                      borderColor: "var(--border)",
+                      color: "var(--text)",
+                    }}
+                  />
+                </div>
+              </div>
+            </div>
+          </section>
         </div>
 
         <div className="slide-panel-footer flex items-center justify-end gap-2">
