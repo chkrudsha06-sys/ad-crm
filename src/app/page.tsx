@@ -112,14 +112,19 @@ function isExecutionPartUser(user: UserInfo | null) {
   const userRole = (user?.role || "").toLowerCase();
 
   return (
-    EXECUTION_PART_NAMES.some((name) => normalizePersonName(name) === userName) ||
+    EXECUTION_PART_NAMES.some(
+      (name) => normalizePersonName(name) === userName,
+    ) ||
     userRole === "exec" ||
     userRole === "execution" ||
     userRole.includes("실행")
   );
 }
 
-function isOwnedByUser(contact: Pick<Contact, "assigned_to" | "consultant">, user: UserInfo | null) {
+function isOwnedByUser(
+  contact: Pick<Contact, "assigned_to" | "consultant">,
+  user: UserInfo | null,
+) {
   const userName = normalizePersonName(user?.name);
   if (!userName) return false;
 
@@ -128,7 +133,6 @@ function isOwnedByUser(contact: Pick<Contact, "assigned_to" | "consultant">, use
     normalizePersonName(contact.consultant) === userName
   );
 }
-
 
 const DEFAULT_WORKSPACE_HREFS = [
   "/contacts",
@@ -311,7 +315,9 @@ function isWeekendOrHoliday(value = new Date()) {
 }
 
 function meetingRegisteredAgo(contact: Contact) {
-  return timeAgo(contact.meeting_registered_at || contact.updated_at || contact.created_at);
+  return timeAgo(
+    contact.meeting_registered_at || contact.updated_at || contact.created_at,
+  );
 }
 
 function money(value?: number | null) {
@@ -882,7 +888,9 @@ export default function HomePage() {
         .limit(700);
     };
 
-    const contactQuery = buildContactQuery(`${baseContactColumns},updated_at,meeting_registered_at`);
+    const contactQuery = buildContactQuery(
+      `${baseContactColumns},updated_at,meeting_registered_at`,
+    );
 
     const { start, end } = (() => {
       const now = new Date();
@@ -914,7 +922,10 @@ export default function HomePage() {
         .limit(30),
     ]);
 
-    if (contactRes.error && contactRes.error.message.includes("meeting_registered_at")) {
+    if (
+      contactRes.error &&
+      contactRes.error.message.includes("meeting_registered_at")
+    ) {
       contactRes = await buildContactQuery(`${baseContactColumns},updated_at`);
     }
 
@@ -927,12 +938,12 @@ export default function HomePage() {
     if (salesRes.error) console.error("ad_executions:", salesRes.error.message);
     if (noteRes.error) console.error("contact_notes:", noteRes.error.message);
 
-    const allContactRows = ((contactRes.data || []) as unknown) as Contact[];
+    const allContactRows = (contactRes.data || []) as unknown as Contact[];
     const dashboardContacts = shouldLimitToOwnCustomers
       ? allContactRows.filter((contact) => isOwnedByUser(contact, user))
       : allContactRows;
 
-    let noteRows = ((noteRes.data || []) as unknown) as Note[];
+    let noteRows = (noteRes.data || []) as unknown as Note[];
 
     if (shouldLimitToOwnCustomers) {
       const visibleContactIds = dashboardContacts
@@ -949,12 +960,14 @@ export default function HomePage() {
 
         if (ownNoteRes.error) {
           console.error("own contact_notes:", ownNoteRes.error.message);
-          const visibleIdSet = new Set(visibleContactIds.map((id) => String(id)));
+          const visibleIdSet = new Set(
+            visibleContactIds.map((id) => String(id)),
+          );
           noteRows = noteRows.filter((note) =>
             visibleIdSet.has(String(note.contact_id)),
           );
         } else {
-          noteRows = ((ownNoteRes.data || []) as unknown) as Note[];
+          noteRows = (ownNoteRes.data || []) as unknown as Note[];
         }
       } else {
         noteRows = [];
@@ -985,7 +998,8 @@ export default function HomePage() {
       if (noteContactRes.error) {
         console.error("note contacts:", noteContactRes.error.message);
       } else {
-        noteContactRows = ((noteContactRes.data || []) as unknown) as NoteContact[];
+        noteContactRows = (noteContactRes.data ||
+          []) as unknown as NoteContact[];
       }
     }
 
@@ -1002,8 +1016,8 @@ export default function HomePage() {
     }
 
     setContacts(dashboardContacts);
-    setTasks(((taskRes.data || []) as unknown) as Task[]);
-    setSales(((salesRes.data || []) as unknown) as AdExecution[]);
+    setTasks((taskRes.data || []) as unknown as Task[]);
+    setSales((salesRes.data || []) as unknown as AdExecution[]);
     setNotes(noteRows);
     setNoteContacts(noteContactRows);
     setLoading(false);
@@ -1101,8 +1115,40 @@ export default function HomePage() {
       .filter((row) => row.contract_route === "분양회")
       .reduce((sum, row) => sum + effectiveSales(row), 0);
 
+    const totalSales = sales.reduce((sum, row) => sum + effectiveSales(row), 0);
+    const expectedSales = 0;
+    const monthlyTarget = 0;
+    const salesAchievementRate =
+      monthlyTarget > 0 ? Math.round((totalSales / monthlyTarget) * 100) : 0;
+    const expectedSalesAchievementRate =
+      monthlyTarget > 0
+        ? Math.round(((totalSales + expectedSales) / monthlyTarget) * 100)
+        : 0;
+
+    const leads = contacts.filter((c) =>
+      [c.management_stage, c.customer_type, c.prospect_type, c.meeting_result]
+        .filter(Boolean)
+        .join(" ")
+        .includes("리드"),
+    );
+    const prospecting = contacts.filter((c) =>
+      [c.management_stage, c.customer_type, c.prospect_type, c.meeting_result]
+        .filter(Boolean)
+        .join(" ")
+        .includes("프로스펙팅"),
+    );
+    const retention = contacts.filter((c) =>
+      [c.management_stage, c.customer_type, c.prospect_type, c.meeting_result]
+        .filter(Boolean)
+        .join(" ")
+        .includes("리텐션"),
+    );
+
     return {
       customers: contacts.length,
+      leads: leads.length,
+      prospecting: prospecting.length,
+      retention: retention.length,
       todayMeetings: todayMeetings.length,
       contracts: contracts.length,
       reservations: reservations.length,
@@ -1112,6 +1158,10 @@ export default function HomePage() {
       adSpecialSales,
       linkedHighTargetSales,
       bunyanghoeMonthlyFee,
+      totalSales,
+      expectedSales,
+      salesAchievementRate,
+      expectedSalesAchievementRate,
     };
   }, [contacts, tasks, sales, me?.name]);
 
@@ -1142,7 +1192,10 @@ export default function HomePage() {
 
   const recentContacts = useMemo(() => {
     return [...contacts]
-      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+      .sort(
+        (a, b) =>
+          new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+      )
       .slice(0, 7);
   }, [contacts]);
   const recentNotes = notes.slice(0, 6);
@@ -1357,8 +1410,8 @@ export default function HomePage() {
             </div>
             <div className="grid grid-cols-2 gap-3 p-3 sm:grid-cols-3 2xl:grid-cols-5">
               <MetricCard
-                label="전체 고객"
-                value={stats.customers}
+                label="전체고객"
+                value={`${stats.customers.toLocaleString()}명`}
                 icon={Users}
                 tone="info"
                 href="/contacts"
@@ -1366,39 +1419,39 @@ export default function HomePage() {
                 compact
               />
               <MetricCard
+                label="리드"
+                value={`${stats.leads.toLocaleString()}명`}
+                icon={UserCheck}
+                tone="cyan"
+                href="/contacts"
+                sub="로직 추후 수정"
+                compact
+              />
+              <MetricCard
+                label="프로스펙팅"
+                value={`${stats.prospecting.toLocaleString()}명`}
+                icon={Target}
+                tone="purple"
+                href="/pipeline"
+                sub="로직 추후 수정"
+                compact
+              />
+              <MetricCard
                 label="딜클로징"
-                value={stats.closing}
+                value={`${stats.closing.toLocaleString()}명`}
                 icon={Zap}
                 tone="warning"
                 href="/pipeline"
-                sub="전체 누적"
+                sub="로직 추후 수정"
                 compact
               />
               <MetricCard
-                label="예약완료"
-                value={stats.reservations}
-                icon={Clock}
-                tone="purple"
-                href="/vip-members"
-                sub="전체 누적"
-                compact
-              />
-              <MetricCard
-                label="계약완료"
-                value={stats.contracts}
+                label="리텐션"
+                value={`${stats.retention.toLocaleString()}명`}
                 icon={BadgeCheck}
                 tone="success"
-                href="/vip-members"
-                sub="전체 누적"
-                compact
-              />
-              <MetricCard
-                label="오늘 미팅"
-                value={stats.todayMeetings}
-                icon={CalendarDays}
-                tone="cyan"
-                href="/calendar"
-                sub="당일 기준"
+                href="/contacts"
+                sub="로직 추후 수정"
                 compact
               />
             </div>
@@ -1414,36 +1467,35 @@ export default function HomePage() {
                 <p className="crm-section-title">당월 진척율</p>
               </div>
               <p className="crm-tiny">
-                광고특전, 하이타겟 연계매출, 분양회 월회비를 당월 기준으로
-                구분합니다.
+                총매출, 예상매출, 목표달성율을 당월 기준으로 확인합니다.
               </p>
             </div>
             <div className="grid grid-cols-1 gap-3 p-3 sm:grid-cols-3 xl:grid-cols-1 2xl:grid-cols-3">
               <MetricCard
-                label="총매출(광고특전)"
-                value={money(stats.adSpecialSales)}
+                label="총매출"
+                value={money(stats.totalSales)}
                 icon={TrendingUp}
                 tone="success"
                 href="/sales"
-                sub="호갱노노 + LMS"
+                sub="당월 확정 매출"
                 compact
               />
               <MetricCard
-                label="연계매출(하이타겟)"
-                value={money(stats.linkedHighTargetSales)}
+                label="예상매출"
+                value={money(stats.expectedSales)}
                 icon={CreditCard}
                 tone="purple"
                 href="/sales"
-                sub="하이타겟 당월 합산"
+                sub="로직 추후 수정"
                 compact
               />
               <MetricCard
-                label="분양회월회비"
-                value={money(stats.bunyanghoeMonthlyFee)}
+                label="목표달성율"
+                value={`${stats.salesAchievementRate.toLocaleString()}%`}
                 icon={Wallet}
                 tone="warning"
                 href="/sales"
-                sub="분양회 월회비 합산"
+                sub={`예상매출포함 ${stats.expectedSalesAchievementRate.toLocaleString()}%`}
                 compact
               />
             </div>
@@ -1471,15 +1523,15 @@ export default function HomePage() {
                   <div className="flex min-w-0 items-center gap-2">
                     <PremiumIcon icon={CalendarDays} tone="cyan" />
                     <div className="min-w-0">
-                      <p className="crm-section-title">오늘의 미팅</p>
+                      <p className="crm-section-title">금일목표</p>
                       <p className="crm-tiny">{formatFullDate(TODAY)} 기준</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="badge-premium badge-info">
-                      총 {todayMeetings.length}명
-                    </span>
-                    <a href="/calendar" className="btn-premium btn-secondary">
+                    <a
+                      href="/daily-activity"
+                      className="btn-premium btn-secondary"
+                    >
                       전체보기
                     </a>
                   </div>
@@ -1490,8 +1542,8 @@ export default function HomePage() {
                     <div className="p-6">
                       <EmptyState
                         icon="📅"
-                        title="오늘 미팅이 없습니다"
-                        description="캘린더 또는 고객DB에서 다음 일정을 확인하세요"
+                        title="금일목표가 없습니다"
+                        description="일별활동기록에서 금일 목표를 확인하세요"
                       />
                     </div>
                   ) : (
@@ -1514,13 +1566,10 @@ export default function HomePage() {
                   <div className="flex min-w-0 items-center gap-2">
                     <PremiumIcon icon={MessageCircle} tone="purple" />
                     <div className="min-w-0">
-                      <p className="crm-section-title">우선 처리 업무</p>
-                      <p className="crm-tiny">미완료 업무 중 우선순위 기준</p>
+                      <p className="crm-section-title">공지사항</p>
+                      <p className="crm-tiny">내부 공지와 공유사항</p>
                     </div>
                   </div>
-                  <a href="/tasks" className="btn-premium btn-secondary">
-                    업무전달
-                  </a>
                 </div>
 
                 <div className="max-h-[365px] overflow-y-auto p-2">
@@ -1528,8 +1577,8 @@ export default function HomePage() {
                     <div className="p-6">
                       <EmptyState
                         icon="✅"
-                        title="미완료 업무가 없습니다"
-                        description="새로운 요청이 들어오면 이곳에 표시됩니다"
+                        title="공지사항이 없습니다"
+                        description="새로운 공지가 등록되면 이곳에 표시됩니다"
                       />
                     </div>
                   ) : (
@@ -1618,11 +1667,14 @@ export default function HomePage() {
                   <div className="flex min-w-0 items-center gap-2">
                     <PremiumIcon icon={Users} tone="success" />
                     <div className="min-w-0">
-                      <p className="crm-section-title">최근 고객</p>
+                      <p className="crm-section-title">최근등록고객</p>
                       <p className="crm-tiny">고객등록 기준 최근 등록 순</p>
                     </div>
                   </div>
-                  <a href="/customer-register" className="btn-premium btn-secondary">
+                  <a
+                    href="/customer-register"
+                    className="btn-premium btn-secondary"
+                  >
                     고객등록
                   </a>
                 </div>
