@@ -8,37 +8,68 @@ const supabase = createClient(
 );
 
 function generateToken(): string {
-  return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}-${Math.random().toString(36).slice(2, 10)}`;
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}-${Math.random()
+    .toString(36)
+    .slice(2, 10)}`;
 }
 
 export async function POST(req: Request) {
   try {
     const { id, password } = await req.json();
+
     if (!id || !password) {
-      return NextResponse.json({ error: "아이디와 비밀번호를 입력해주세요." }, { status: 400 });
+      return NextResponse.json(
+        { error: "아이디와 비밀번호를 입력해주세요." },
+        { status: 400 }
+      );
     }
 
-    // DB에서 사용자 조회
     const { data: user, error } = await supabase
       .from("crm_users")
       .select("id, password_hash, name, title, role")
       .eq("id", id)
       .maybeSingle();
 
-    if (error || !user) {
-      return NextResponse.json({ error: "아이디 또는 비밀번호가 올바르지 않습니다." }, { status: 401 });
+    if (error) {
+      console.error("Login user fetch error:", error);
+      return NextResponse.json(
+        { error: `사용자 조회 실패: ${error.message}` },
+        { status: 500 }
+      );
     }
 
-    // 비밀번호 해시 검증
-    const valid = await bcrypt.compare(password, user.password_hash);
+    if (!user) {
+      return NextResponse.json(
+        { error: "아이디 또는 비밀번호가 올바르지 않습니다." },
+        { status: 401 }
+      );
+    }
+
+    let valid = false;
+
+    // 1차: bcrypt 해시 비밀번호 검증
+    try {
+      valid = await bcrypt.compare(password, user.password_hash);
+    } catch (bcryptError) {
+      console.error("bcrypt compare error:", bcryptError);
+    }
+
+    // 2차: 초기 세팅용 평문 비밀번호 임시 허용
+    // Supabase에 password_hash = 'admin1234!' 처럼 넣은 임시 계정용
+    if (!valid && user.password_hash === password) {
+      valid = true;
+    }
+
     if (!valid) {
-      return NextResponse.json({ error: "아이디 또는 비밀번호가 올바르지 않습니다." }, { status: 401 });
+      return NextResponse.json(
+        { error: "아이디 또는 비밀번호가 올바르지 않습니다." },
+        { status: 401 }
+      );
     }
 
-    // 세션 토큰 생성 (24시간 만료)
     const token = generateToken();
     const now = new Date();
-    const expiresAt = new Date(now.getTime() + 24 * 60 * 60 * 1000); // 24시간
+    const expiresAt = new Date(now.getTime() + 24 * 60 * 60 * 1000);
 
     const { error: sessionError } = await supabase.from("sessions").upsert(
       {
@@ -52,7 +83,10 @@ export async function POST(req: Request) {
 
     if (sessionError) {
       console.error("Session upsert error:", sessionError);
-      return NextResponse.json({ error: `세션 생성 실패: ${sessionError.message}` }, { status: 500 });
+      return NextResponse.json(
+        { error: `세션 생성 실패: ${sessionError.message}` },
+        { status: 500 }
+      );
     }
 
     return NextResponse.json({
@@ -65,6 +99,10 @@ export async function POST(req: Request) {
       },
     });
   } catch (err: any) {
-    return NextResponse.json({ error: "서버 오류가 발생했습니다." }, { status: 500 });
+    console.error("Login server error:", err);
+    return NextResponse.json(
+      { error: `서버 오류가 발생했습니다: ${err?.message || "unknown error"}` },
+      { status: 500 }
+    );
   }
 }
