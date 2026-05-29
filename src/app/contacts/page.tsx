@@ -7,6 +7,7 @@ import type { ElementType, ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   CalendarDays,
+  ClipboardList,
   ChevronDown,
   Edit2,
   Filter,
@@ -44,9 +45,34 @@ type Contact = {
   reservation_date: string | null;
   regular_payment_date: string | null;
   intake_route: string | null;
+  operating_site?: string | null;
+  total_org_count?: string | null;
+  team_org_count?: string | null;
+  rt?: string | null;
   bunyanghoe_number?: string | null;
   bank_account?: string | null;
   dashboard_code?: string | null;
+  created_at: string;
+};
+
+type ContactFieldHistory = {
+  id: number;
+  contact_id: number;
+  site_name: string | null;
+  area: string | null;
+  site_condition: string | null;
+  sale_rate: string | null;
+  organization_size: string | null;
+  organization_chart: string | null;
+  rt_fee: string | null;
+  next_site_name: string | null;
+  next_move_month: string | null;
+  expected_revenue_site: string | null;
+  expected_revenue: string | null;
+  info_date: string | null;
+  info_source: string | null;
+  field_memo: string | null;
+  author: string | null;
   created_at: string;
 };
 
@@ -293,8 +319,70 @@ function ContactMobileCard({ contact, onClick }: { contact: Contact; onClick: ()
   );
 }
 
+function FieldHistoryCard({ history }: { history: ContactFieldHistory }) {
+  return (
+    <div className="rounded-[14px] p-4" style={{ background: "var(--surface-2)", border: "1px solid var(--border-subtle)" }}>
+      <div className="mb-3 flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="truncate text-[14px] font-[800]" style={{ color: "var(--text-strong)" }}>{history.site_name || "현장명 미입력"}</p>
+          <p className="mt-1 text-[11px] font-bold" style={{ color: "var(--text-faint)" }}>
+            {history.info_date ? formatFullDate(history.info_date) : formatFullDate(history.created_at)} · {history.info_source || "출처 없음"}
+          </p>
+        </div>
+        <Badge tone="info">{history.area || "지역 없음"}</Badge>
+      </div>
+      <div className="grid grid-cols-1 gap-2 text-[12px] md:grid-cols-2">
+        <Field label="현장컨디션"><Badge tone="warning">{history.site_condition || "-"}</Badge></Field>
+        <Field label="분양률"><Badge tone="success">{history.sale_rate || "-"}</Badge></Field>
+        <Field label="조직수"><Badge tone="purple">{history.organization_size || "-"}</Badge></Field>
+        <Field label="현장조직도">{history.organization_chart || "-"}</Field>
+        <Field label="R/T 수수료">{history.rt_fee || "-"}</Field>
+        <Field label="이동예정월"><Badge tone="cyan">{history.next_move_month || "-"}</Badge></Field>
+        <Field label="이동예정현장">{history.next_site_name || "-"}</Field>
+        <Field label="예상매출현장">{history.expected_revenue_site || "-"}</Field>
+        <Field label="예상매출"><Badge tone="success">{history.expected_revenue || "-"}</Badge></Field>
+        <Field label="작성자">{history.author || "-"}</Field>
+      </div>
+      {history.field_memo && (
+        <div className="mt-3 whitespace-pre-wrap rounded-[12px] p-3 text-[12px] font-semibold leading-relaxed" style={{ background: "var(--surface-1)", color: "var(--text-muted)", border: "1px solid var(--border-subtle)" }}>
+          {history.field_memo}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function DetailPanel({ contact, tab, onTab, onClose, onEdit, onDelete }: { contact: Contact; tab: DetailTab; onTab: (tab: DetailTab) => void; onClose: () => void; onEdit: (contact: Contact) => void; onDelete: (contact: Contact) => void }) {
+  const [fieldHistories, setFieldHistories] = useState<ContactFieldHistory[]>([]);
+  const [fieldHistoryLoading, setFieldHistoryLoading] = useState(false);
   const meeting = contact.meeting_date ? formatFullDate(contact.meeting_date) : contact.meeting_date_text || "-";
+
+  useEffect(() => {
+    let alive = true;
+    const loadFieldHistories = async () => {
+      setFieldHistoryLoading(true);
+      const { data, error } = await supabase
+        .from("contact_field_histories")
+        .select("*")
+        .eq("contact_id", contact.id)
+        .order("info_date", { ascending: false })
+        .order("created_at", { ascending: false });
+
+      if (!alive) return;
+      if (error) {
+        console.error("Field History 조회 실패:", error.message);
+        setFieldHistories([]);
+      } else {
+        setFieldHistories((data || []) as ContactFieldHistory[]);
+      }
+      setFieldHistoryLoading(false);
+    };
+
+    void loadFieldHistories();
+    return () => {
+      alive = false;
+    };
+  }, [contact.id]);
 
   return (
     <>
@@ -307,12 +395,12 @@ function DetailPanel({ contact, tab, onTab, onClose, onEdit, onDelete }: { conta
               <div className="min-w-0">
                 <div className="flex min-w-0 items-center gap-2">
                   <h2 className="truncate text-[22px] font-[780] tracking-[-0.05em]" style={{ color: "var(--text-strong)" }}>{contact.name}</h2>
-                  <Badge tone={resultTone(contact.meeting_result)}>{contact.meeting_result || "미정"}</Badge>
-                </div>
-                <p className="mt-1 text-[13px] font-semibold" style={{ color: "var(--text-subtle)" }}>ID {contact.id} · {contact.title || "직급 없음"} · 담당 {contact.assigned_to || "-"}</p>
-                <div className="mt-3 flex flex-wrap gap-1.5">
-                  <Badge tone={prospectTone(contact.prospect_type)}>{contact.prospect_type || "가망 없음"}</Badge>
                   <Badge tone={stageTone(contact.management_stage)}>{contact.management_stage || "단계 없음"}</Badge>
+                </div>
+                <p className="mt-1 text-[13px] font-semibold" style={{ color: "var(--text-subtle)" }}>ID {contact.id} · {contact.title || "직급 없음"} · {contact.phone || "연락처 없음"}</p>
+                <div className="mt-3 flex flex-wrap gap-1.5">
+                  <Badge tone="info">{contact.intake_route || "유입경로 없음"}</Badge>
+                  <Badge tone={contact.customer_type === "신규" ? "cyan" : "muted"}>{contact.customer_type || "고객유형 없음"}</Badge>
                   <Badge tone={sensitivityTone(contact.tm_sensitivity)}>TM {contact.tm_sensitivity || "-"}</Badge>
                 </div>
               </div>
@@ -337,25 +425,37 @@ function DetailPanel({ contact, tab, onTab, onClose, onEdit, onDelete }: { conta
           {tab === "summary" && (
             <div className="space-y-5">
               <section className="premium-card p-4">
-                <div className="mb-3 flex items-center gap-2"><PremiumIcon icon={Phone} tone="info" /><div><p className="crm-section-title">고객 접점</p><p className="crm-tiny">연락처와 미팅 정보</p></div></div>
+                <div className="mb-3 flex items-center gap-2"><PremiumIcon icon={Phone} tone="info" /><div><p className="crm-section-title">고객 기본정보</p><p className="crm-tiny">신규고객 등록 입력값 기준</p></div></div>
+                <Field label="고객명">{contact.name || "-"}</Field>
+                <Field label="직급">{contact.title || "-"}</Field>
                 <Field label="연락처"><span className="inline-flex items-center gap-1.5" style={{ color: "var(--accent-text)" }}><Phone size={14} />{contact.phone || "-"}</span></Field>
-                <Field label="미팅일"><span className="inline-flex items-center gap-1.5"><CalendarDays size={14} style={{ color: "var(--text-subtle)" }} />{meeting}</span></Field>
-                <Field label="미팅지역"><span className="inline-flex items-center gap-1.5"><MapPin size={14} style={{ color: "var(--text-subtle)" }} />{contact.meeting_address || "-"}</span></Field>
-                <Field label="유입경로"><Badge tone="muted">{contact.intake_route || "-"}</Badge></Field>
+                <Field label="유입경로"><Badge tone="info">{contact.intake_route || "-"}</Badge></Field>
+                <Field label="고객유형"><Badge tone={contact.customer_type === "신규" ? "cyan" : "muted"}>{contact.customer_type || "-"}</Badge></Field>
+                <Field label="관리단계"><Badge tone={stageTone(contact.management_stage)}>{contact.management_stage || "-"}</Badge></Field>
+                <Field label="TM감도"><Badge tone={sensitivityTone(contact.tm_sensitivity)}>{contact.tm_sensitivity || "-"}</Badge></Field>
               </section>
 
               <section className="premium-card p-4">
-                <div className="mb-3 flex items-center gap-2"><PremiumIcon icon={UserCheck} tone="success" /><div><p className="crm-section-title">영업 상태</p><p className="crm-tiny">가망, 단계, 결과</p></div></div>
-                <Field label="고객유형"><Badge tone={contact.customer_type === "신규" ? "info" : "muted"}>{contact.customer_type || "-"}</Badge></Field>
-                <Field label="관리단계"><Badge tone={stageTone(contact.management_stage)}>{contact.management_stage || "-"}</Badge></Field>
-                <Field label="가망유형"><Badge tone={prospectTone(contact.prospect_type)}>{contact.prospect_type || "-"}</Badge></Field>
-                <Field label="미팅결과"><Badge tone={resultTone(contact.meeting_result)}>{contact.meeting_result || "-"}</Badge></Field>
-                <Field label="컨설턴트"><Badge tone="purple">{contact.consultant || "-"}</Badge></Field>
+                <div className="mb-3 flex items-center gap-2"><PremiumIcon icon={MapPin} tone="success" /><div><p className="crm-section-title">현장 / 미팅 정보</p><p className="crm-tiny">고객등록 입력값과 연동</p></div></div>
+                <Field label="운영현장">{contact.operating_site || "-"}</Field>
+                <Field label="미팅일"><span className="inline-flex items-center gap-1.5"><CalendarDays size={14} style={{ color: "var(--text-subtle)" }} />{meeting}</span></Field>
+                <Field label="미팅지역"><span className="inline-flex items-center gap-1.5"><MapPin size={14} style={{ color: "var(--text-subtle)" }} />{contact.meeting_address || "-"}</span></Field>
               </section>
 
               <section className="premium-card p-4">
                 <div className="mb-3 flex items-center gap-2"><PremiumIcon icon={MessageSquare} tone="cyan" /><div><p className="crm-section-title">메모</p><p className="crm-tiny">상담 내용과 특이사항</p></div></div>
                 <div className="min-h-[120px] whitespace-pre-wrap rounded-[12px] p-4 text-[13px] font-medium leading-relaxed" style={{ background: "var(--surface-2)", color: contact.memo ? "var(--text-muted)" : "var(--text-faint)", border: "1px solid var(--border-subtle)" }}>{contact.memo || "등록된 메모가 없습니다."}</div>
+              </section>
+
+              <section className="premium-card p-4">
+                <div className="mb-4 flex items-center gap-2"><PremiumIcon icon={ClipboardList} tone="purple" /><div><p className="crm-section-title">Field History</p><p className="crm-tiny">신규고객등록 / 파이프라인 고객카드 입력값</p></div></div>
+                {fieldHistoryLoading ? (
+                  <div className="flex h-24 items-center justify-center"><div className="h-6 w-6 animate-spin rounded-full border-2 border-t-transparent" style={{ borderColor: "var(--accent)", borderTopColor: "transparent" }} /></div>
+                ) : fieldHistories.length === 0 ? (
+                  <div className="rounded-[14px] p-5 text-center text-[13px] font-semibold" style={{ background: "var(--surface-2)", color: "var(--text-faint)", border: "1px solid var(--border-subtle)" }}>등록된 Field History가 없습니다.</div>
+                ) : (
+                  <div className="space-y-3">{fieldHistories.map((history) => <FieldHistoryCard key={history.id} history={history} />)}</div>
+                )}
               </section>
             </div>
           )}
